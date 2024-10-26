@@ -11,6 +11,7 @@ using VulnerableWebApplication.MidlWare;
 using VulnerableWebApplication.TestCpu;
 using VulnerableWebApplication.VLAIdentity;
 using VulnerableWebApplication.VLAModel;
+using Microsoft.AspNetCore.DataProtection;
 
 // Configuration of services
 var builder = WebApplication.CreateBuilder(args);
@@ -20,13 +21,14 @@ builder.Configuration
     .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
     .AddEnvironmentVariables();
 
+
 // Swagger configuration
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo
     {
-        Title = "API",
+        Title = "VulnerableWebApplication",
         Version = "v1",
         Description = "API documentation"
     });
@@ -81,6 +83,10 @@ app.UseGraphQLPlayground("/GraphQLUI", new GraphQL.Server.Ui.Playground.Playgrou
 // Handle CLI arguments for URL and testing
 string url = args.FirstOrDefault(arg => arg.StartsWith("--url="));
 string test = args.FirstOrDefault(arg => arg.StartsWith("--test"));
+
+VLAIdentity.SetSecret(builder.Configuration["JWTSecret:Secret"]);
+VLAIdentity.SetLogFile(app.Configuration["LogFile"]);
+VLAController.SetLogFile(app.Configuration["LogFile"]);
 
 if (!string.IsNullOrEmpty(test))
 {
