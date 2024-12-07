@@ -28,40 +28,70 @@ namespace VulnerableWebApplication.VLAIdentity
 
         public static async Task<object> VulnerableQuery(string User, string Passwd)
         {
-            /*
-            Authentifie les utilisateurs par login et mot de passe, et renvoie un token JWT si l'authentification a réussi
-            */          
-            SHA256 Sha256Hash = SHA256.Create();
-            byte[] Bytes = Sha256Hash.ComputeHash(Encoding.UTF8.GetBytes(Passwd));
-            StringBuilder stringbuilder = new StringBuilder();
-            for (int i = 0; i < Bytes.Length; i++) stringbuilder.Append(Bytes[i].ToString("x2"));
-            string Hash = stringbuilder.ToString();
+            // Log the login attempt without including the password
+            VLAController.VLAController.VulnerableLogs("Login attempt for: " + User, LogFile);
 
-            VLAController.VLAController.VulnerableLogs("login attempt for:\n" + User + "\n" + Passwd + "\n", LogFile);
+            // Retrieve user data (mocked in this example, replace with actual DB retrieval)
             var DataSet = VLAModel.Data.GetDataSet();
-            var Result = DataSet.Tables[0].Select("Passwd = '" + Hash + "' and User = '" + User + "'");
-            var userRow = DataSet.Tables[0].AsEnumerable().FirstOrDefault(row => row.Field<string>("User") == User && row.Field<int>("IsAdmin") == 1);
 
-            return Result.Length > 0 ? Results.Ok(VulnerableGenerateToken(User, userRow != null)) : Results.Unauthorized();
+            // Find the user row (assuming you have a method to retrieve it, e.g., from a database)
+            var userRow = DataSet.Tables[0].AsEnumerable()
+                .FirstOrDefault(row => row.Field<string>("User") == User);
+
+            if (userRow == null)
+            {
+                // User not found
+                return Results.Unauthorized();
+            }
+
+            // Get the stored hashed password from the database
+            string storedHashedPassword = userRow.Field<string>("Passwd");
+
+            // Verify the password using bcrypt (assumes bcrypt is used to hash the password)
+            bool isPasswordCorrect = BCrypt.Net.BCrypt.Verify(Passwd, storedHashedPassword);
+
+            if (isPasswordCorrect)
+            {
+                // Check if user is an admin
+                var isAdmin = userRow.Field<int>("IsAdmin") == 1;
+
+                // Generate JWT token (assuming VulnerableGenerateToken is implemented elsewhere)
+                var token = VulnerableGenerateToken(User, isAdmin);
+
+                // Return the JWT token
+                return Results.Ok(new { Token = token });
+            }
+
+            // If authentication fails, return unauthorized
+            return Results.Unauthorized();
         }
+
 
         public static string VulnerableGenerateToken(string User, bool IsAdmin)
         {
-            /*
-            Retourne un token JWT signé pour l'utilisateur passé en paramètre
-            */
-            var TokenHandler = new JwtSecurityTokenHandler();
-            var Key = Encoding.ASCII.GetBytes(Secret);
-            var TokenDescriptor = new SecurityTokenDescriptor
+            if (string.IsNullOrEmpty(User))
             {
-                Subject = new ClaimsIdentity(new[] { new Claim("Id", User), new Claim("IsAdmin", IsAdmin.ToString()) }),
-                Expires = DateTime.UtcNow.AddDays(365),
-                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(Key), SecurityAlgorithms.HmacSha256Signature)
-            };
-            var Token = TokenHandler.CreateToken(TokenDescriptor);
+                throw new ArgumentNullException(nameof(User), "Username cannot be null or empty.");
+            }
 
-            return TokenHandler.WriteToken(Token);
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.ASCII.GetBytes(Environment.GetEnvironmentVariable("JWTSECRET"));
+
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(new Claim[]
+                {
+            new Claim(ClaimTypes.Name, User),
+            new Claim(ClaimTypes.Role, IsAdmin ? "Admin" : "User")
+                }),
+                Expires = DateTime.UtcNow.AddHours(1),
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+            };
+
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+            return tokenHandler.WriteToken(token);
         }
+
 
         public static bool VulnerableValidateToken(string Token, string Secret)
         {

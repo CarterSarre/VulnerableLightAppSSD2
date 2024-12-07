@@ -84,7 +84,7 @@ app.UseGraphQLPlayground("/GraphQLUI", new GraphQL.Server.Ui.Playground.Playgrou
 string url = args.FirstOrDefault(arg => arg.StartsWith("--url="));
 string test = args.FirstOrDefault(arg => arg.StartsWith("--test"));
 
-VLAIdentity.SetSecret(builder.Configuration["JWTSecret:Secret"]);
+VLAIdentity.SetSecret(Environment.GetEnvironmentVariable("JWTSECRET"));
 VLAIdentity.SetLogFile(app.Configuration["LogFile"]);
 VLAController.SetLogFile(app.Configuration["LogFile"]);
 

@@ -116,27 +116,32 @@ namespace VulnerableWebApplication.VLAController
             File.WriteAllText(LogFile, Page);
         }
 
-        public static async Task<object> VulnerableWebRequest(string Uri = "https://localhost:3000/")
+        public static async Task<object> VulnerableWebRequest(string uri = "https://localhost:3000/")
         {
-            /*
-            Effectue une requête web sur la boucle locale
-            */
-            if (Uri.IsNullOrEmpty()) Uri = "https://localhost:3000/";
-            if (Regex.IsMatch(Uri, @"^https://localhost"))
+            if (uri.IsNullOrEmpty())
             {
-                using HttpClient Client = new();
-                Client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/html"));
-
-                var Resp = await exec(Client, Uri);
-                static async Task<string> exec(HttpClient client, string uri)
-                {
-                    var Result = client.GetAsync(uri);
-                    Result.Result.EnsureSuccessStatusCode();
-                    return Result.Result.StatusCode.ToString();
-                }
-                return Results.Ok(Resp);
+                uri = "https://localhost:3000/";
             }
-            else return Results.Unauthorized();
+
+            if (Uri.CheckHostName(uri) == UriHostNameType.Unknown)
+            {
+                return Results.Unauthorized();
+            }
+
+            Uri uriObject = new Uri(uri);
+
+            // Could also do a port check but it's unclear as to whether or not this is a requirement (it should be, you don't want to let people probe random ports from within the machine)
+            if (!uriObject.IsLoopback || uriObject.Scheme != "https")
+            {
+                return Results.Unauthorized();
+            }
+
+            HttpClient httpClient = new();
+            httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/html"));
+            var response = await httpClient.GetAsync(uriObject);
+            response.EnsureSuccessStatusCode();
+            httpClient.Dispose();
+            return Results.Ok(response.StatusCode.ToString());
         }
 
         public static object VulnerableObjectReference(string Id)
@@ -152,26 +157,13 @@ namespace VulnerableWebApplication.VLAController
 
         public static object VulnerableCmd(string UserStr)
         {
-            /*
-            Effectue une requête DNS pour le FQDN passé en paramètre
-            */
-            if (Regex.Match(UserStr, @"^(?:[a-zA-Z0-9_\-]+\.)+[a-zA-Z]{2,}(?:.{0,100})$").Success)
+            if (Uri.CheckHostName(UserStr) == UriHostNameType.Unknown)
             {
-                Process Cmd = new Process();
-                Cmd.StartInfo.FileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "powershell" : "/bin/sh";
-                Cmd.StartInfo.RedirectStandardInput = true;
-                Cmd.StartInfo.RedirectStandardOutput = true;
-                Cmd.StartInfo.CreateNoWindow = true;
-                Cmd.StartInfo.UseShellExecute = false;
-                Cmd.Start();
-                Cmd.WaitForExit(200);
-                Cmd.StandardInput.WriteLine("nslookup " + UserStr);
-                Cmd.StandardInput.Flush();
-                Cmd.StandardInput.Close();
-
-                return Results.Ok(Cmd.StandardOutput.ReadToEnd());
+                return Results.Unauthorized();
             }
-            else return Results.Unauthorized();
+            string domain = new Uri(UserStr).DnsSafeHost;
+            var ipAddresses = System.Net.Dns.GetHostAddresses(domain);
+            return Results.Ok(ipAddresses);
         }
 
         public static unsafe string VulnerableBuffer(string UserStr)
@@ -188,16 +180,8 @@ namespace VulnerableWebApplication.VLAController
 
         public static string VulnerableCodeExecution(string UserStr)
         {
-            /*
-            Retourne un nouvel Id
-            */
-            string Result = string.Empty;
-            if (UserStr.Length < 40 && !UserStr.Contains("class") && !UserStr.Contains("using"))
-            {
-                Result = CSharpScript.EvaluateAsync($"System.Math.Pow(2, {UserStr})")?.Result?.ToString();
-            }
-
-            return Result;
+            int exponent = 0;
+            return int.TryParse(UserStr, out exponent) ? Math.Pow(2, exponent).ToString() : string.Empty;
         }
 
         public static async Task<IResult> VulnerableHandleFileUpload(IFormFile UserFile, string Header)
